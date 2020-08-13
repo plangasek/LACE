@@ -1,0 +1,4 @@
+"0","sqlStatement <- ""SELECT * from patient where postalcode LIKE '970%'"""
+"0","queryResult <- tbl(con, sql(sqlStatement))"
+"0","queryResult <- collect(queryResult)"
+"0","queryResult[1:20,]"

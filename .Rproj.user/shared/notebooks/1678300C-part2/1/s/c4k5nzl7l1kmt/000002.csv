@@ -1,0 +1,7 @@
+"0","sqlStatement <- ""SELECT patientID, SUM(DxPoints) "
+"0","                FROM comorbidityScoreTable"
+"0","                GROUP BY patientid"""
+"0",""
+"0","queryResult <- tbl(con, sql(sqlStatement))"
+"0",""
+"0","queryResult"

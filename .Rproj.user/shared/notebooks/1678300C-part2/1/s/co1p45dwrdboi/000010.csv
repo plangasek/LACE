@@ -1,0 +1,12 @@
+"0","sqlStatement <- ""SELECT patientid, SUM(Length_of_stay,Admission_acuity,ifnull(coPts,0),ED_visits_score) LACE FROM ("
+"0","                  (SELECT * "
+"0","                  FROM analyticTable "
+"0","                  WHERE index_admit=1) LEFT JOIN "
+"0","                  (SELECT patientID, SUM(DxPoints) coPts"
+"0","                  FROM comorbidityScoreTable"
+"0","                  GROUP BY patientid) USING (patientID)"
+"0","                )"""
+"0",""
+"0","queryResult <- tbl(con, sql(sqlStatement))"
+"2","Error: wrong number of arguments to function SUM()
+"

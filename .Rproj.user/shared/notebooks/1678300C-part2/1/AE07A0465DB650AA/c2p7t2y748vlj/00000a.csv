@@ -1,0 +1,8 @@
+"0",""
+"0","sqlStatement <- ""SELECT patientid, ICD9Code, Case WHEN ICD9Code IS NOT NULL THEN '14_2_Cancer' END as DxGroup"
+"0","                 FROM patient_diagnosis"
+"0","                  WHERE (ICD9Code = '238.6' OR ICD9Code LIKE '14_%' OR ICD9Code LIKE '15_%' OR ICD9Code LIKE '16_%' OR ICD9Code LIKE '17_%' OR ICD9Code LIKE '18_%' OR ICD9Code LIKE '190%' OR ICD9Code LIKE '191%' OR ICD9Code LIKE '192%' OR ICD9Code LIKE '193%' OR ICD9Code LIKE '194%' OR ICD9Code LIKE '195 OR ICD9Code LIKE '20_%') AND (ICD9Code NOT LIKE '173%' OR ICD9Code NOT LIKE '195.9%' OR ICD9Code NOT LIKE '209%')"""
+"0",""
+"0","queryResult <- tbl(con, sql(sqlStatement))"
+"2","Error: unrecognized token: ""20_""
+"

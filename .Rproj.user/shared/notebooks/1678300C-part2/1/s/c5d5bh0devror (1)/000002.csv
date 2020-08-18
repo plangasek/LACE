@@ -1,0 +1,3 @@
+"0","tableResult <-collect(queryResult)"
+"2","Error: Column name `DxGroup` must not be duplicated.
+"

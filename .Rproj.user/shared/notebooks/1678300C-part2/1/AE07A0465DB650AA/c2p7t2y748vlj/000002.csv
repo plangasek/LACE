@@ -1,0 +1,12 @@
+"0",""
+"0","sqlStatement <- ""SELECT patientid, ICD9Code, Case WHEN ICD9Code IS NOT NULL THEN '14_2_Cancer' END as DxGroup"
+"0","                 FROM patient_diagnosis"
+"0","                  WHERE ICD9Code IN ('410','412') OR ICD9Code LIKE '410.%' OR ICD9Code LIKE '412.%'"""
+"0",""
+"0","queryResult <- tbl(con, sql(sqlStatement))"
+"2","Registered S3 methods overwritten by 'dbplyr':
+  method         from
+  print.tbl_lazy     
+  print.tbl_sql      
+"
+"0","queryResult"

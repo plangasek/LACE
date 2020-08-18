@@ -1,0 +1,160 @@
+---
+title: 'Part 1: Calculating L, A, E'
+author: "Campbell/Langasek"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+# Identifying Appropriate Algorithms to Predict Readmission Risk
+
+## Due Date: Monday of Week 8 (August 16)
+
+## Working Together in Teams
+
+- You are all paired as Bioinformatics/Clinical teams. Working together is key.
+- Both Bio/Clinical people have insights to share with the other. 
+- You can submit separate notebooks for these problem sets, or submit the same ones. 
+- Your team is responsible for presenting together for the final presentations.
+
+## Purpose  
+
+To identify potential requirements for measuring readmissions and predicting readmission risk, and to map these from source data warehouse data.
+
+## Background
+
+Several algorithms have been created to predict readmission risk. The LACE and Amarasingham papers are provided as prototypical examples of these algorithms (see `reading` folder).  An optional paper by Kansagara et al. highlights the overall performance of these algorithms.
+
+Please look at the LACE score appendix (also in `reading`) for the details on how to calculate the different parts of LACE.
+
+## Deliverables:  
+
+1) First 20 lines of your table with L,A, and E scores
+
+2) The code you used to generate the scores
+
+## Suggested Steps:   
+```{r}
+#load the RSQLite library
+library(RSQLite)
+library(here)
+library(dplyr)
+```
+
+1) Store your analytic table (the table you made for week 4-5) in your database, as you will using that for the basis for all of your calculations. You can also start with the analytic table in `data/analytic.csv` and save it into your database if you want.
+
+```{r}
+
+#connect to our database
+con <- dbConnect(drv=SQLite(), dbname=here("data/patient1.sqlite"))
+
+analytic_table <- read.csv('analytic_table.csv')
+
+dbWriteTable(conn = con, 
+             name="analyticTable",
+             value = analytic_table, 
+             overwrite=TRUE)
+
+dbListTables(con)
+```
+
+```{r}
+sqlStatement <- "SELECT *
+                 FROM analyticTable" 
+
+queryResult <- tbl(con, sql(sqlStatement))
+
+queryResult
+```
+
+If you use your own table, please make sure to subset the data so that `indexadmit` == 1 to get started. We want to remove the non-index dates from our predictive model.
+
+2) For the L Score, add to your analytic table that you started in your prework to calculate `Length_of_stay` and whether this was an admission from the ED.  Recode the `Length_of_stay` into the Lace Version.
+```{r}
+sqlStatement <- "SELECT *, julianday(Discharge_date)-julianday(Admit_date) as Length_of_stay
+                 FROM analyticTable
+                 WHERE index_admit = 1" 
+
+queryResult <- tbl(con, sql(sqlStatement))
+
+queryResult
+```
+
+3) For the A score, you need to identify patients in `patient_encounter_hosp` that have been admitted through the Emergency Room. Recode these patients according to the LACE specification.
+```{r}
+#This answers the prompt, but...
+sqlStatement <- "SELECT *, CASE 
+                  WHEN Admit_source = 'Emergency Room' THEN 3
+                  ELSE 0 END as Admission_acuity
+                 FROM patient_encounter_hosp" 
+
+queryResult <- tbl(con, sql(sqlStatement))
+
+queryResult
+
+#I want everything in my analytic table
+sqlStatement <- "SELECT *, julianday(Discharge_date)-julianday(Admit_date) as Length_of_stay, CASE 
+                  WHEN Admit_source = 'Emergency Room' THEN 3
+                  ELSE 0 END as Admission_acuity
+                 FROM analyticTable" 
+
+queryResult <- tbl(con, sql(sqlStatement))
+
+queryResult
+
+```
+
+4) Look in `patient_encounter` to find ED visits.  You may find the code file `t_encounter_type` useful.  Count the ED visits (in aggregate) per admission; recode the visits number into the LACE specification.
+```{r}
+#what is num_att_vists?
+
+sqlStatement <- "SELECT analyticTable.*, julianday(Discharge_date)-julianday(Admit_date) as Length_of_stay, CASE 
+                  WHEN Admit_source = 'Emergency Room' THEN 3
+                  ELSE 0 END as Admission_acuity, CASE 
+                  WHEN count(num_att_visits) > 4 THEN 4
+                  ELSE count(num_att_visits) END as ED_visits_score
+                  FROM analyticTable JOIN (
+                    SELECT patientID, num_att_visits, i, Actual_date 
+                    FROM patient_encounter 
+                    WHERE encounter_type = 48
+                  ) USING (patientID)
+                  GROUP BY patientID, Event_ID
+                  HAVING date(Admit_date, '-6 months')<date(Actual_date)<date(Admit_date)"
+
+queryResult <- tbl(con, sql(sqlStatement))
+
+tableResult <-collect(queryResult)
+
+queryResult
+
+```
+
+5) Advanced: add more data points from the other files into your analytic file from other algorithms.
+
+## PLEASE NOTE
+
+I will not accept assignments that are full tidyverse. The point of this course is to learn SQL and show that you can do work with it. 
+
+
+```{r}
+
+dbWriteTable(conn = con, 
+             name="analyticTable",
+             value = tableResult, 
+             overwrite=TRUE)
+
+sqlStatement <- "SELECT * FROM analyticTable"
+
+queryResult <- tbl(con, sql(sqlStatement))
+
+queryResult
+```
+
+
+```{r}
+dbDisconnect(con)
+```

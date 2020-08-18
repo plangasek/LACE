@@ -1,0 +1,5 @@
+"0","sqlStatement <- ""SELECT * FROM analyticTable"""
+"0",""
+"0","queryResult <- tbl(con, sql(sqlStatement))"
+"0",""
+"0","queryResult"

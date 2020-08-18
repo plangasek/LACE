@@ -1,0 +1,11 @@
+"0","sqlStatement <- ""(SELECT patientid, ICD9Code, Case WHEN ICD9Code IS NOT NULL THEN 'CHF' END as DxGroup"
+"0","                 FROM patient_diagnosis"
+"0","                  WHERE ICD9Code IN ('398.91','402.01','402.11','402.91','404.01','404.03','404.11','404.13','404.91','404.93','425.4','425.5','425.6','425.7','425.8','425.9','428') OR ICD9Code LIKE '428.%') CHF "
+"0","                  UNION "
+"0","                  (SELECT patientid, ICD9Code, Case WHEN ICD9Code IS NOT NULL THEN 'MI' END as DxGroup"
+"0","                 FROM patient_diagnosis"
+"0","                  WHERE ICD9Code IN ('410','412') OR ICD9Code LIKE '410.%',' OR ICD9Code LIKE '412.%') MI"" "
+"0",""
+"0","queryResult <- tbl(con, sql(sqlStatement))"
+"2","Error: near ""UNION"": syntax error
+"

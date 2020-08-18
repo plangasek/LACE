@@ -1,0 +1,8 @@
+"0",""
+"0","sqlStatement <- ""SELECT patientid, ICD9Code, Case WHEN ICD9Code IS NOT NULL THEN '14_2_Cancer' END as DxGroup"
+"0","                 FROM patient_diagnosis"
+"0","                  WHERE ICD9Code REGEXP '^((1[4-6][0-9]|17[0-24-9]|18[0-9]|19[0-4])(\\.\\d+)?|195\\.[0-8]|20[0-8](\\.\\d+)?|238.6)$'"""
+"0",""
+"0","queryResult <- tbl(con, sql(sqlStatement))"
+"2","Error: no such function: REGEXP
+"

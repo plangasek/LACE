@@ -1,0 +1,26 @@
+{
+    "id": "312599BB",
+    "path": "/cloud/project/inClassHints.Rmd",
+    "project_path": "inClassHints.Rmd",
+    "type": "r_markdown",
+    "hash": "0",
+    "contents": "",
+    "dirty": false,
+    "created": 1596495443216.0,
+    "source_on_save": false,
+    "relative_order": 5,
+    "properties": {
+        "chunk_output_type": "inline",
+        "cursorPosition": "136,188",
+        "last_setup_crc32": "",
+        "scrollLine": "131"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1596495453,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1596495453675,
+    "read_only": false,
+    "read_only_alternatives": []
+}

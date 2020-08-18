@@ -1,0 +1,25 @@
+{
+    "id": "28D8DD61",
+    "path": "/cloud/project/week45.Rmd",
+    "project_path": "week45.Rmd",
+    "type": "r_markdown",
+    "hash": "0",
+    "contents": "",
+    "dirty": false,
+    "created": 1595346167478.0,
+    "source_on_save": false,
+    "relative_order": 2,
+    "properties": {
+        "chunk_output_type": "inline",
+        "cursorPosition": "110,40",
+        "scrollLine": "106"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1595375505,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1595375505797,
+    "read_only": false,
+    "read_only_alternatives": []
+}

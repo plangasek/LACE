@@ -1,7 +1,0 @@
-"0","sqlStatement <- ""SELECT *, julianday(Discharge_date)-julianday(Admit_date) as Length_of_stay"
-"0","                 FROM analyticTable"
-"0","                 WHERE index_admit = 1"" "
-"0",""
-"0","queryResult <- tbl(con, sql(sqlStatement))"
-"0",""
-"0","queryResult"

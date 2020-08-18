@@ -1,0 +1,47 @@
+"0","library(RSQLite)"
+"0","library(dplyr)"
+"2","Registered S3 method overwritten by 'dplyr':
+  method           from
+  print.rowwise_df     
+"
+"2","
+Attaching package: ‘dplyr’
+
+"
+"2","The following objects are masked from ‘package:stats’:
+
+    filter, lag
+
+"
+"2","The following objects are masked from ‘package:base’:
+
+    intersect, setdiff, setequal, union
+
+"
+"0","library(dbplyr)"
+"2","Registered S3 methods overwritten by 'dbplyr':
+  method         from
+  print.tbl_lazy     
+  print.tbl_sql      
+"
+"2","
+Attaching package: ‘dbplyr’
+
+"
+"2","The following objects are masked from ‘package:dplyr’:
+
+    ident, sql
+
+"
+"0","library(here)"
+"2","here() starts at /cloud/project
+"
+"0","con <- dbConnect(SQLite(),dbname=here(""data/patient1.sqlite""))"
+"0",""
+"0","sqlStatement <- ""select peh.*, julianday('2015-01-01') - julianday(peh.Admit_date) "
+"0","    as TimeFromNewYear FROM"
+"0","    patient_encounter_hosp as peh"""
+"0",""
+"0","queryResult <- tbl(con, sql(sqlStatement))"
+"0","queryResult <- collect(queryResult)"
+"0","queryResult[1:10,]"

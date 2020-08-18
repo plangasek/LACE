@@ -1,0 +1,3 @@
+"0",""
+"0","reason5 <- queryResult[queryResult$reason == 5,]"
+"0","reason5[1:10,]"

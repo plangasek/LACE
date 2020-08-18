@@ -1,0 +1,32 @@
+"0","library(RSQLite)
+library(dplyr)
+library(dbplyr)
+"
+"2","Registered S3 methods overwritten by 'dbplyr':
+  method         from
+  print.tbl_lazy     
+  print.tbl_sql      
+"
+"2","
+Attaching package: ‘dbplyr’
+
+"
+"2","The following objects are masked from ‘package:dplyr’:
+
+    ident, sql
+
+"
+"0","library(here)"
+"2","here() starts at /cloud/project
+"
+"2","
+Attaching package: ‘here’
+
+"
+"2","The following object is masked from ‘package:lubridate’:
+
+    here
+
+"
+"0","con <- dbConnect(SQLite(),dbname=here(""data/patient1.sqlite""))"
+"0",""

@@ -134,8 +134,7 @@ sqlStatement <- "SELECT patientid, ICD9Code, substr(DxGroup,1,2) as DxGroupCode,
                   UNION
                   SELECT patientid, ICD9Code, Case WHEN ICD9Code IS NOT NULL THEN '17_4_AIDS/HIV' END as DxGroup
                  FROM patient_diagnosis
-                  WHERE ICD9Code LIKE '042%' OR ICD9Code LIKE '043%' OR ICD9Code LIKE '044%')
-" 
+                  WHERE ICD9Code LIKE '042%' OR ICD9Code LIKE '043%' OR ICD9Code LIKE '044%')" 
 
 queryScoreResult <- tbl(con, sql(sqlStatement))
 

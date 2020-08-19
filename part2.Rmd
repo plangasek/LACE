@@ -66,6 +66,8 @@ dbListTables(con)
 ```
 
 ```{r}
+#Use union statements to combine queries selecting relevent ICD9 codes and then splitting the case statement to account for points and diagnosis name
+
 sqlStatement <- "SELECT patientid, ICD9Code, substr(DxGroup,1,2) as DxGroupCode, substr(DxGroup,4,1) as DxPoints, substr(DxGroup,6) as DxGroup
                 FROM 
                 (SELECT patientid, ICD9Code, Case WHEN ICD9Code IS NOT NULL THEN '02_2_Congestive Heart Failure' END as DxGroup
@@ -144,6 +146,7 @@ queryScoreResult
 ```{r}
 tableResultScore <-collect(queryScoreResult)
 
+#Save the results in a table
 dbWriteTable(conn = con, 
              name="comorbidityScoreTable",
              value = tableResultScore, 
@@ -156,6 +159,7 @@ queryResult <- tbl(con, sql(sqlStatement))
 queryResult
 ```
 ```{r}
+#check the table results
 sqlStatement <- "SELECT patientID, SUM(DxPoints) 
                 FROM comorbidityScoreTable
                 GROUP BY patientid"
@@ -166,7 +170,8 @@ queryResult
 ```
 
 ```{r}
-sqlStatement <- "SELECT patientid, (Length_of_stay+Admission_acuity+ifnull(coPts,0)+ED_visits_score) LACE FROM (
+#Combine points to form LACE score
+sqlStatement <- "SELECT patientid, (Length_of_stay+Admission_acuity+CASE WHEN ifnull(coPts,0)<3 THEN ifnull(coPts,0) ELSE 5 END+ED_visits_score) LACE FROM (
                   (SELECT * 
                   FROM analyticTable 
                   WHERE index_admit=1) LEFT JOIN 

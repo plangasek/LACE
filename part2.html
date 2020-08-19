@@ -432,7 +432,9 @@ dbListTables(con)</code></pre>
 ##  [4] &quot;patient&quot;                &quot;patient_diagnosis&quot;      &quot;patient_encounter&quot;     
 ##  [7] &quot;patient_encounter_hosp&quot; &quot;race&quot;                   &quot;t_encounter_reason&quot;    
 ## [10] &quot;t_encounter_type&quot;</code></pre>
-<pre class="r"><code>sqlStatement &lt;- &quot;SELECT patientid, ICD9Code, substr(DxGroup,1,2) as DxGroupCode, substr(DxGroup,4,1) as DxPoints, substr(DxGroup,6) as DxGroup
+<pre class="r"><code>#Use union statements to combine queries selecting relevent ICD9 codes and then splitting the case statement to account for points and diagnosis name
+
+sqlStatement &lt;- &quot;SELECT patientid, ICD9Code, substr(DxGroup,1,2) as DxGroupCode, substr(DxGroup,4,1) as DxPoints, substr(DxGroup,6) as DxGroup
                 FROM 
                 (SELECT patientid, ICD9Code, Case WHEN ICD9Code IS NOT NULL THEN &#39;02_2_Congestive Heart Failure&#39; END as DxGroup
                  FROM patient_diagnosis
@@ -500,8 +502,7 @@ dbListTables(con)</code></pre>
                   UNION
                   SELECT patientid, ICD9Code, Case WHEN ICD9Code IS NOT NULL THEN &#39;17_4_AIDS/HIV&#39; END as DxGroup
                  FROM patient_diagnosis
-                  WHERE ICD9Code LIKE &#39;042%&#39; OR ICD9Code LIKE &#39;043%&#39; OR ICD9Code LIKE &#39;044%&#39;)
-&quot; 
+                  WHERE ICD9Code LIKE &#39;042%&#39; OR ICD9Code LIKE &#39;043%&#39; OR ICD9Code LIKE &#39;044%&#39;)&quot; 
 
 queryScoreResult &lt;- tbl(con, sql(sqlStatement))
 
@@ -524,6 +525,7 @@ queryScoreResult</code></pre>
 ## # ... with more rows</code></pre>
 <pre class="r"><code>tableResultScore &lt;-collect(queryScoreResult)
 
+#Save the results in a table
 dbWriteTable(conn = con, 
              name=&quot;comorbidityScoreTable&quot;,
              value = tableResultScore, 
@@ -550,7 +552,8 @@ queryResult</code></pre>
 ##  9         5 428.0    02          2        Congestive Heart Failure   
 ## 10         5 434.91   04          1        Cerebrovascular Disease    
 ## # ... with more rows</code></pre>
-<pre class="r"><code>sqlStatement &lt;- &quot;SELECT patientID, SUM(DxPoints) 
+<pre class="r"><code>#check the table results
+sqlStatement &lt;- &quot;SELECT patientID, SUM(DxPoints) 
                 FROM comorbidityScoreTable
                 GROUP BY patientid&quot;
 
@@ -573,7 +576,8 @@ queryResult</code></pre>
 ##  9        10               2
 ## 10        11               2
 ## # ... with more rows</code></pre>
-<pre class="r"><code>sqlStatement &lt;- &quot;SELECT patientid, (Length_of_stay+Admission_acuity+ifnull(coPts,0)+ED_visits_score) LACE FROM (
+<pre class="r"><code>#Combine points to form LACE score
+sqlStatement &lt;- &quot;SELECT patientid, (Length_of_stay+Admission_acuity+CASE WHEN ifnull(coPts,0)&lt;3 THEN ifnull(coPts,0) ELSE 5 END+ED_visits_score) LACE FROM (
                   (SELECT * 
                   FROM analyticTable 
                   WHERE index_admit=1) LEFT JOIN 
@@ -590,14 +594,14 @@ queryResult</code></pre>
 ## #   Drive\OHSU\BMI569\LACE\project\data\patient1.sqlite]
 ##    patientid  LACE
 ##        &lt;int&gt; &lt;dbl&gt;
-##  1         1    14
-##  2         2    17
-##  3         3    10
-##  4         4    13
+##  1         1    16
+##  2         2    19
+##  3         3    12
+##  4         4    15
 ##  5         6    13
-##  6         7    25
+##  6         7    26
 ##  7         8     6
-##  8         9    14
+##  8         9    16
 ##  9        10     9
 ## 10        11     5
 ## # ... with more rows</code></pre>

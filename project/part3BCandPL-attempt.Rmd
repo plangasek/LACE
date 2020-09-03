@@ -1,0 +1,393 @@
+---
+title: 'Problem Set 3: Modeling'
+author: "Campbell/Langasek"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Due Date: August 31 (Monday of Week 10)
+
+1) Calculate the LACE scores for each patient. 
+
+2 Run a basic analysis of the LACE variables to predict readmission risk using your analytic file. Some kinds of analysis you can do: contingency tables ([more info here](http://www.statmethods.net/stats/frequencies.html) ) or logistic regression (More info [here](https://www.r-bloggers.com/evaluating-logistic-regression-models/) and [here](https://www.analyticsvidhya.com/blog/2015/11/beginners-guide-on-logistic-regression-in-r/) ). How well does the LACE score predict readmission risk? Can you compare the predictive power of each variable (L, A, C, E) to predict risk? Begin to think about what visualizations and analysis supports your conclusions.
+
+3) *Optional*: Try changing the ‘weights’ of each of the individual scores to calculate a different LACE score and see the difference in predictive validity.
+
+```{r}
+#load the RSQLite library
+library(RSQLite)
+library(here)
+library(dplyr)
+library(tidyverse)
+library(broom)
+library(caret)
+library(ggplot2)
+library(plotly)
+library(ROCR)
+library(skimr)
+library(randomForest)
+```
+
+```{r}
+
+#connect to our database
+con <- dbConnect(drv=SQLite(), dbname=here("data/patient1.sqlite"))
+
+dbListTables(con)
+```
+
+```{r}
+#Combine points to form LACE score
+sqlStatement <- "SELECT patientid, Length_of_stay, Admission_acuity, ifnull(coPts,0) comorbidity, CASE WHEN ifnull(coPts,0)<3 THEN ifnull(coPts,0) ELSE 5 END coPts, ED_visits_score, (Length_of_stay+Admission_acuity+CASE WHEN ifnull(coPts,0)<3 THEN ifnull(coPts,0) ELSE 5 END+ED_visits_score) LACE, readmit30 FROM (
+                  (SELECT * 
+                  FROM analyticTable 
+                  WHERE index_admit=1) LEFT JOIN 
+                  (SELECT patientID, SUM(DxPoints) coPts
+                  FROM comorbidityScoreTable
+                  GROUP BY patientid) USING (patientID)
+                )"
+
+
+queryResult <- tbl(con, sql(sqlStatement))
+
+queryResult
+
+tableResult <-collect(queryResult)
+
+saveRDS(tableResult, file='data/LACE.RDS')
+```
+
+# EDA
+
+```{r}
+LACE_pt <- readRDS("data/LACE.RDS")
+
+ggplot(gather(LACE_pt), aes(x = value)) +
+  geom_histogram() + 
+  facet_wrap(~key, scales = 'free_x')
+
+skim(LACE_pt)
+summary(LACE_pt)
+```
+
+No missing data, 21904 observations of 8 variables.
+
+Factors in this dataset are:
+Admission_acuity, either 0 or 3
+readmit30, either 0 or 1
+ED_visits_score, 1, 2, 3, or 4
+coPts, 0, 1, 2, or 5
+
+and comorbidity can be argued either way, as either numeric or factor. Let's treat it as factor moving forward.
+
+# Data Wrangling
+
+```{r}
+set.seed(111)
+
+# LACE_pt <- readRDS("data/LACE.RDS") moved up into the EDA portion
+
+# Retype the factors
+
+LACE_pt$readmit30 <-factor(LACE_pt$readmit30,labels=c('no','yes'))
+LACE_pt$Admission_acuity <- factor(LACE_pt$Admission_acuity)
+LACE_pt$ED_visits_score <- factor(LACE_pt$ED_visits_score)
+LACE_pt$coPts <- factor(LACE_pt$coPts)
+LACE_pt$comorbidity <- factor(LACE_pt$comorbidity)
+
+# Summarize data
+
+summary(LACE_pt)
+skim(LACE_pt)
+
+```
+
+# Create Training and Testing Datasets
+
+Setting type for each of the clearly factor variables ensure they're not treated as numeric in the model.
+
+TECHNICALLY, we should also have a validation set, but in the interest of time and ease of explanation, will go with suggestions from assignment instructions of splitting into 2 partitions: training and testing.
+
+```{r}
+#grab indices of the dataset that represent 80% of the data
+trainingIndices <- createDataPartition(y = LACE_pt$readmit30, p=.80,
+                                       list=FALSE)
+
+#show the first few training indices
+trainingIndices[1:10]
+
+#select the rows
+trainData <- LACE_pt[trainingIndices,]
+
+#confirm the number of rows (should be 80)
+nrow(trainData)
+
+#build our test set using the R-indexing
+#using the "-" operator
+testData <- LACE_pt[-trainingIndices,]
+
+#confirm the number of rows 
+nrow(testData)
+```
+
+```{r}
+# Expected rows:
+
+.8 * nrow(LACE_pt)
+
+# Confirm:
+
+nrow(LACE_pt) == nrow(testData) + nrow(trainData)
+```
+
+```{r}
+skim(testData)
+skim(trainData)
+
+ggplot(gather(testData[2:8]), aes(x = value)) + 
+  geom_histogram(stat = 'count') + 
+  facet_wrap(~key, scales = 'free_x')
+
+```
+
+```{r}
+ggplot(gather(trainData[2:8]), aes(x = value)) +
+  geom_histogram(stat = 'count') + 
+  facet_wrap(~key, scales = 'free_x')
+```
+
+The distributions of the different elements generally look similar in the data partitions, so it's ok to proceed with modeling.
+
+# Linear Model
+
+```{r}
+#show variable names in analytic data.frame
+colnames(trainData)
+
+#run a simple logistic regression model just using age and gender
+#we can cast gender as categorical data using factor()
+
+LACEModel <- glm(readmit30 ~ Length_of_stay + Admission_acuity + coPts + ED_visits_score, data= trainData, family="binomial")
+summary(LACEModel)
+```
+
+```{r}
+ggplot(trainData, aes(y = readmit30, x = Length_of_stay, color = Admission_acuity)) + 
+  geom_boxplot()
+
+ggplot(trainData, aes(y = readmit30, x = Length_of_stay, color = coPts)) + 
+  geom_boxplot()
+
+ggplot(trainData, aes(y = readmit30, x = Length_of_stay, color = ED_visits_score)) + 
+  geom_boxplot()
+
+ggplot(trainData, aes(y = readmit30, x = ED_visits_score, color = coPts)) + 
+  geom_point()
+```
+
+```{r}
+LACEModelSimple <- glm(readmit30 ~ Length_of_stay + Admission_acuity, data = trainData, family = "binomial")
+
+summary(LACEModelSimple)
+
+tidy(LACEModelSimple)
+```
+
+
+
+```{r}
+#Summarize the model
+tidy(LACEModel)
+```
+```{r}
+#grab coefficients themselves
+coef(LACEModel)
+```
+```{r}
+modelPredictedProbabilities <- predict(LACEModel, newdata=testData, type = "response")
+
+##add the modelPredictedProbabilities as a column in testData
+testData <- data.frame(testData, predProb=modelPredictedProbabilities)
+#testDataAugment <- augment(ageGenderModel)
+
+testData %>% ggplot(aes(x=LACE, y=predProb, color=Admission_acuity)) + geom_point()
+```
+
+```{r}
+simplemodelPredictedProbabilities <- predict(LACEModelSimple, newdata=testData, type = "response")
+
+testData <- data.frame(testData, predProbSimple=simplemodelPredictedProbabilities)
+
+testData %>%
+  ggplot(aes(x = LACE, y = predProbSimple, color = Admission_acuity)) +
+  geom_point()
+```
+
+
+```{r}
+#predict the logit instead for our testData
+modelPredictedLogOddsRatio <- predict(LACEModel,newdata = testData)
+
+#add as another column in our table
+testDataPred <- data.frame(testData, predLogit = modelPredictedLogOddsRatio)
+
+#plot the age versus logit (coloring by gender)
+testDataPred %>% ggplot(aes(x=LACE, y=predLogit, color=Admission_acuity)) + geom_point()
+```
+
+```{r}
+#predict the SIMPLE logit instead for our testData
+simplemodelPredictedLogOddsRatio <- predict(LACEModelSimple,newdata = testData)
+
+#add as another column in our table
+testDataPredsimple <- data.frame(testData, predLogit = simplemodelPredictedLogOddsRatio)
+
+#plot the age versus logit (coloring by gender)
+testDataPredsimple %>% ggplot(aes(x=LACE, y=predLogit, color=Admission_acuity)) + geom_point()
+```
+
+```{r}
+#transform the logit to the predictedOdds ratio
+modelPredictedOddsRatio <- exp(modelPredictedLogOddsRatio)
+modelPredictedOddsRatio[1:10]
+
+#add as column in our table
+testDataPred <- data.frame(testDataPred, predOR = modelPredictedOddsRatio)
+
+#plot Odds ratio versus age
+testDataPred %>% ggplot(aes(x=LACE, y=predOR, col=Admission_acuity)) + geom_point() + xlim(0,25) + ylim(0,0.5)
+```
+```{r}
+exp(coef(LACEModel))
+```
+
+```{r}
+modelPredictedProbabilities %>% data.frame() %>% ggplot(aes(x=modelPredictedProbabilities)) + geom_histogram()
+```
+```{r}
+modelPredictions <- ifelse(modelPredictedProbabilities < 0.13, "no", "yes")
+modelPredictions[1:10]
+```
+```{r}
+truthPredict <- table(testData$readmit30, modelPredictions)
+truthPredict
+```
+
+```{r}
+simplemodelPredictions <- ifelse(simplemodelPredictedProbabilities < 0.13, "no", "yes")
+
+simpletruthPredict <- table(testData$readmit30, simplemodelPredictions)
+simpletruthPredict
+```
+
+
+```{r}
+totalCases <- sum(truthPredict)
+misclassified <- truthPredict[1,2] + truthPredict[2,1]
+misclassified
+accuracy <- (totalCases - misclassified) / totalCases
+accuracy
+```
+```{r}
+
+caret::confusionMatrix(testData$readmit30, factor(modelPredictions), positive = "yes")
+```
+```{r}
+truth <- factor(testData$readmit30, levels=c("Y","N"))
+#seq() function allows us to make a sequence of cutoffs
+cutoffs <- seq(from=0.01,to=1, by = 0.01)
+cutoffs
+```
+
+```{r}
+# this function will produce a confusion matrix
+# for a particular cutoff
+run_cutoff <- function(cutoff){
+  #Do thresholding with cutoff       
+  predictions <- ifelse(modelPredictedProbabilities < cutoff, "N", "Y")
+  #run confusion matrix on predictions
+  caret::confusionMatrix(
+          factor(predictions, levels=c("Y", "N")), 
+                  truth, 
+                  positive="Y")
+  }
+```
+
+```{r}
+#run our function on all of our cutoffs
+#the output is a list of confusion matrices
+confusion_matrices <- lapply(cutoffs, run_cutoff)
+
+#get the sensitivity out of the list of confusion matrices
+sensitivities <- lapply(confusion_matrices, function(x){return(x$byClass["Sensitivity"])})
+
+#get the sensitivity out of the list of confusion matrices
+specificities <- lapply(confusion_matrices, function(x){return(x$byClass["Specificity"])})
+
+#make sensitivities and specificities into vectors
+sensitivities <- unlist(sensitivities)
+specificities <- unlist(specificities)
+
+#produce a data frame with all of the cutoffs
+cutoff_frame <- data.frame(cutoff=cutoffs, sensitivity =sensitivities, specificity = specificities)
+cutoff_frame
+```
+
+50% accuracy with a simple linear model is .. not great. Adjusting the components didn't help at all.
+
+# Random Forest
+
+I want a dataset that only has the data we're going to use for the models in it.
+
+```{r}
+workingtrainData <- trainData %>%
+  select(2, 3, 5, 6, 8)
+
+workingtestData <- testData %>%
+  select(2, 3, 5, 6, 8)
+```
+
+
+```{r}
+set.seed(1701)
+
+rf.LACE <- randomForest(readmit30 ~ ., data = workingtrainData, mtry = 4, importance = TRUE)
+
+rf.LACE
+
+```
+```{r}
+summary(rf.LACE)
+```
+```{r}
+workingtestData <- mutate(workingtestData, rf.predictLACE = predict(rf.LACE, workingtestData, type = 'response'))
+
+rf.table <- table(workingtestData$readmit30, workingtestData$rf.predictLACE)
+
+rf.table
+
+```
+
+```{r}
+
+rf.misclassified <- rf.table[1,2] + rf.table[2,1]
+rf.misclassified
+rf.accuracy <- (nrow(workingtestData) - rf.misclassified) / nrow(workingtestData)
+rf.accuracy
+```
+
+
+```{r}
+rf.conf <- confusionMatrix(workingtestData$readmit30, rf.predictLACE, positive = 'yes')
+
+rf.conf
+```
+
+
+```{r}
+dbDisconnect(con)
+```

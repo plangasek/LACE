@@ -1,0 +1,310 @@
+---
+title: 'Problem Set 3: Modeling'
+author: "Campbell/Langasek"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+1) Calculate the LACE scores for each patient. 
+
+2 Run a basic analysis of the LACE variables to predict readmission risk using your analytic file. Some kinds of analysis you can do: contingency tables ([more info here](http://www.statmethods.net/stats/frequencies.html) ) or logistic regression (More info [here](https://www.r-bloggers.com/evaluating-logistic-regression-models/) and [here](https://www.analyticsvidhya.com/blog/2015/11/beginners-guide-on-logistic-regression-in-r/) ). How well does the LACE score predict readmission risk? Can you compare the predictive power of each variable (L, A, C, E) to predict risk? Begin to think about what visualizations and analysis supports your conclusions.
+
+3) *Optional*: Try changing the ‘weights’ of each of the individual scores to calculate a different LACE score and see the difference in predictive validity.
+
+```{r}
+#load the RSQLite library
+library(RSQLite)
+library(here)
+library(dplyr)
+library(tidyverse)
+library(broom)
+library(caret)
+library(ggplot2)
+library(plotly)
+#library for decision trees
+library(party)
+library(ROCR)
+#library for neural networks
+library(keras)
+library(tensorflow)
+library(reticulate)
+#library(reticulate)
+#virtualenv_create("myenv")
+#use_virtualenv("myenv")
+#install_keras(method="virtualenv", envname="myenv")
+#use_virtualenv("myenv")
+#library(keras)
+```
+
+```{r}
+
+#connect to our database
+con <- dbConnect(drv=SQLite(), dbname=here("data/patient1.sqlite"))
+
+dbListTables(con)
+```
+
+```{r}
+#Combine points to form LACE score
+sqlStatement <- "SELECT patientid, CASE WHEN Length_of_stay < 5 THEN Length_of_stay WHEN Length_of_stay < 6 THEN 4 WHEN Length_of_stay < 13 THEN 5 ELSE 7 END Length_of_stay, Admission_acuity, ifnull(coPts,0) comorbidity, CASE WHEN ifnull(coPts,0)<3 THEN ifnull(coPts,0) ELSE 5 END coPts, ED_visits_score, (CASE WHEN Length_of_stay < 5 THEN Length_of_stay WHEN Length_of_stay < 6 THEN 4 WHEN Length_of_stay < 13 THEN 5 ELSE 7 END+Admission_acuity+CASE WHEN ifnull(coPts,0)<3 THEN ifnull(coPts,0) ELSE 5 END+ED_visits_score) LACE, readmit30 FROM (
+                  (SELECT * 
+                  FROM analyticTable 
+                  WHERE index_admit=1) LEFT JOIN 
+                  (SELECT patientID, SUM(DxPoints) coPts
+                  FROM comorbidityScoreTable
+                  GROUP BY patientid) USING (patientID)
+                )"
+
+
+queryResult <- tbl(con, sql(sqlStatement))
+
+queryResult
+
+tableResult <-collect(queryResult)
+
+saveRDS(tableResult, file='data/LACE.RDS')
+```
+
+
+
+
+```{r}
+set.seed(111)
+
+LACE_pt <- readRDS("data/LACE.RDS")
+
+LACE_pt$readmit30 <-factor(LACE_pt$readmit30,labels=c('no','yes'))
+summary(LACE_pt)
+```
+```{r}
+#grab indices of the dataset that represent 80% of the data
+trainingIndices <- createDataPartition(y = LACE_pt$readmit30, p=.80,
+                                       list=FALSE)
+
+#show the first few training indices
+trainingIndices[1:10]
+
+#select the rows
+trainData <- LACE_pt[trainingIndices,]
+
+#confirm the number of rows (should be 80)
+nrow(trainData)
+
+#build our test set using the R-indexing
+#using the "-" operator
+testData <- LACE_pt[-trainingIndices,]
+
+#confirm the number of rows 
+nrow(testData)
+```
+```{r}
+#show variable names in analytic data.frame
+colnames(trainData)
+
+#run a simple logistic regression model just using age and gender
+#we can cast gender as categorical data using factor()
+
+LACEModel <- glm(readmit30 ~ Length_of_stay + Admission_acuity + coPts + ED_visits_score, data= trainData, family="binomial")
+summary(LACEModel)
+```
+```{r}
+#Summarize the model
+tidy(LACEModel)
+```
+```{r}
+#grab coefficients themselves
+coef(LACEModel)
+```
+```{r}
+modelPredictedProbabilities <- predict(LACEModel, newdata=testData, type = "response")
+
+##add the modelPredictedProbabilities as a column in testData
+testData <- data.frame(testData, predProb=modelPredictedProbabilities)
+#testDataAugment <- augment(ageGenderModel)
+
+testData %>% ggplot(aes(x=LACE, y=predProb, color=Admission_acuity)) + geom_point()
+```
+```{r}
+#predict the logit instead for our testData
+modelPredictedLogOddsRatio <- predict(LACEModel,newdata = testData)
+
+#add as another column in our table
+testDataPred <- data.frame(testData, predLogit = modelPredictedLogOddsRatio)
+
+#plot the age versus logit (coloring by gender)
+testDataPred %>% ggplot(aes(x=LACE, y=predLogit, color=Admission_acuity)) + geom_point()
+```
+```{r}
+#transform the logit to the predictedOdds ratio
+modelPredictedOddsRatio <- exp(modelPredictedLogOddsRatio)
+modelPredictedOddsRatio[1:10]
+
+#add as column in our table
+testDataPred <- data.frame(testDataPred, predOR = modelPredictedOddsRatio)
+
+#plot Odds ratio versus age
+testDataPred %>% ggplot(aes(x=LACE, y=predOR, col=Admission_acuity)) + geom_point() + xlim(0,25) + ylim(0,0.5)
+```
+```{r}
+exp(coef(LACEModel))
+```
+
+```{r}
+modelPredictedProbabilities %>% data.frame() %>% ggplot(aes(x=modelPredictedProbabilities)) + geom_histogram()
+```
+```{r}
+modelPredictions <- ifelse(modelPredictedProbabilities < 0.2, "no", "yes")
+modelPredictions[1:10]
+```
+```{r}
+truthPredict <- table(testData$readmit30, modelPredictions)
+truthPredict
+```
+```{r}
+totalCases <- sum(truthPredict)
+misclassified <- truthPredict[1,2] + truthPredict[2,1]
+misclassified
+accuracy <- (totalCases - misclassified) / totalCases
+accuracy
+```
+```{r}
+#testData$readmit30
+confusionMatrix(factor(testData$readmit30), factor(modelPredictions), positive = "yes")
+```
+```{r}
+truth <- factor(testData$readmit30, levels=c("yes","no"))
+#seq() function allows us to make a sequence of cutoffs
+cutoffs <- seq(from=0.01,to=1, by = 0.01)
+cutoffs
+```
+
+```{r}
+# this function will produce a confusion matrix
+# for a particular cutoff
+run_cutoff <- function(cutoff){
+  #Do thresholding with cutoff       
+  predictions <- ifelse(modelPredictedProbabilities < cutoff, "no", "yes")
+  #run confusion matrix on predictions
+  caret::confusionMatrix(
+          factor(predictions, levels=c("yes", "no")), 
+                  truth, 
+                  positive="yes")
+  }
+```
+
+```{r}
+#run our function on all of our cutoffs
+#the output is a list of confusion matrices
+confusion_matrices <- lapply(cutoffs, run_cutoff)
+
+#get the sensitivity out of the list of confusion matrices
+sensitivities <- lapply(confusion_matrices, function(x){return(x$byClass["Sensitivity"])})
+
+#get the sensitivity out of the list of confusion matrices
+specificities <- lapply(confusion_matrices, function(x){return(x$byClass["Specificity"])})
+
+#make sensitivities and specificities into vectors
+sensitivities <- unlist(sensitivities)
+specificities <- unlist(specificities)
+
+#produce a data frame with all of the cutoffs
+cutoff_frame <- data.frame(cutoff=cutoffs, sensitivity =sensitivities, specificity = specificities)
+cutoff_frame
+```
+```{r}
+roc_plot <- cutoff_frame %>% ggplot(aes(x=1-specificity, y=sensitivity, cutoff=cutoff, specificity=specificity)) + geom_point() + ggtitle("ROC Curve for LACE Model") + xlim(c(0,1)) + ylim(c(0,1))
+
+plotly::ggplotly(roc_plot, tooltip=c("cutoff", "sensitivity", "specificity")) 
+```
+```{r}
+pr <- ROCR::prediction(modelPredictedProbabilities, testData$readmit30)
+prf <- ROCR::performance(pr, measure = "tpr", x.measure = "fpr")
+plot(prf, main="ROC Curve")
+```
+```{r}
+auc <- performance(pr, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
+```
+
+```{r}
+## some Intel CPUs need this option set for Keras to work
+## if in doubt, just leave this command uncommented
+Sys.setenv('KMP_DUPLICATE_LIB_OK'='True')
+
+## first let's remember what our data looks like
+head(trainData)
+
+## normalize data
+scaled_train <- apply(data.matrix(trainData), 2, function(x) (x-min(x))/(max(x) - min(x)))
+scaled_test <- apply(data.matrix(testData), 2, function(x) (x-min(x))/(max(x) - min(x)))
+
+## our dataset still contains all of the same information, but values are now numeric and range from 0 to 1
+head(scaled_train)
+```
+
+```{r}
+## instantiate the model framework and let keras know we'll be building a sequential model
+model <- keras_model_sequential()
+
+## add fully-connected/dense layers to our model with dropout for regularization (i.e. to prevent overfitting)
+## scaled_train[,c(2,6) selects all rows from columns 2 and 6 (age and sbp) of the training data
+model %>%
+	layer_dense(units = 140, activation = 'relu', input_shape = ncol(scaled_test[,c("Length_of_stay","Admission_acuity", "coPts", "ED_visits_score")])) %>%
+	layer_dropout(0.25) %>%
+	layer_dense(units = 140, activation = 'relu') %>%
+	layer_dropout(0.25) %>%
+	layer_dense(units = 1, activation = 'sigmoid')
+
+## compile the model
+## since this is a binary classification problem, we use binary crossentropy as our loss metric
+## we'll use simple stochastic gradient decent as our optimizer
+## and we'll monitor the accuracy of both the train and test sets to let us evaluate model performance
+model %>% compile(loss = "binary_crossentropy", optimizer = optimizer_sgd(lr = 0.1), metrics = c('acc'))
+```
+
+```{r, results='hide'}
+## select our predictor and outcome variables 
+scaled_train_x <- scaled_train[, c('Length_of_stay','Admission_acuity','coPts','ED_visits_score')]
+scaled_train_y <- scaled_train[, 'readmit30']
+
+## train the model
+training <- model %>% fit(x = scaled_train_x, y = scaled_train_y, validation_split = 0.20, batch_size = 100, epochs = 25)
+plot(training)
+```
+
+```{r}
+## as before, we have our model make predictions on the test dataset
+nn_predictions <- model %>% predict_proba(scaled_test[,c("Length_of_stay","Admission_acuity", "coPts", "ED_visits_score")])
+
+## compare those predictions to the true class labels
+nn_pr <- prediction(nn_predictions, scaled_test[,"readmit30"])
+
+## evaluate the performance of the model
+nn_perf <- performance(nn_pr, measure = "tpr", x.measure = "fpr")
+
+## calculate the AUC of the model
+nn_auc <- performance(nn_pr, measure = "auc")
+nn_auc <- nn_auc@y.values[[1]]
+
+## plot the model performance
+plot(nn_perf, main="ROC")
+abline(a=0, b=1, col='red', lty=2)
+text(0.5, 0.15, paste('AUROC: ', round(nn_auc, 3)))
+
+## we can also have the neural network output the predicted class (rather than class probability)
+nn_classes <- model %>% predict_classes(scaled_test[,c("Length_of_stay","Admission_acuity", "coPts", "ED_visits_score")])
+
+## then use that as input to confusionMatrix()
+nn_conf <- confusionMatrix(as.factor(nn_classes), as.factor(scaled_test[,"readmit30"]), positive = '1')
+nn_conf
+```
+
+```{r}
+#dbDisconnect(con)
+```

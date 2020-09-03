@@ -30,6 +30,7 @@ library(plotly)
 library(ROCR)
 library(skimr)
 library(randomForest)
+library(e1071)
 ```
 
 ```{r}
@@ -387,6 +388,69 @@ rf.conf <- confusionMatrix(workingtestData$readmit30, rf.predictLACE, positive =
 rf.conf
 ```
 
+
+Ok, sensitivity is still pretty ... awful. Maybe we should try allowing the forest to use less than all of the LACE components?
+
+```{r}
+workingtestData2 <- workingtestData[1:5]
+```
+
+```{r}
+set.seed(1702)
+
+rfsmall.LACE <- randomForest(readmit30 ~ ., data = workingtrainData, mtry = 2, importance = TRUE)
+
+```
+
+```{r}
+workingtestData2 <- mutate(workingtestData2, rfsmall.predictLACE = predict(rfsmall.LACE, workingtestData2, type = 'response'))
+
+rfsmall.table <- table(workingtestData2$readmit30, workingtestData2$rfsmall.predictLACE)
+
+rfsmall.table
+```
+
+
+```{r}
+rfsmall.conf <- confusionMatrix(workingtestData2$readmit30, workingtestData2$rfsmall.predictLACE, positive = 'yes')
+
+rfsmall.conf
+```
+
+Sensitivity, arguably more important than specificity in this case, is still pretty low, but much better than when we expected the decision trees to use all the parameters to classify. I'm starting to wonder if we need to reeavaluate our bin values for the ED visits, but that shouldn't capture *more* of the readmit patients, and specificity doesn't need any help with either model.
+
+Trying a SVM because, why not?
+
+# SVM
+
+Because por que no?
+
+```{r}
+svm.workingtestData <- workingtestData[1:5]
+```
+
+```{r}
+set.seed(1703)
+
+tune.out <- tune(svm, readmit30 ~ ., data = workingtrainData, kernel = 'linear', cost = 10)
+```
+
+```{r}
+summary(tune.out)
+```
+
+```{r}
+svm.workingtestData <- svm.workingtestData %>%
+  mutate(svm.pred = predict(tune.out$best.model, svm.workingtestData))
+```
+
+```{r}
+svm.conf <- confusionMatrix(svm.workingtestData$readmit30, svm.workingtestData$svm.pred, positive = 'yes')
+
+svm.conf
+```
+
+SVM will not identify any positive classes. Adjusted C parameter in range (0.01, .1, 1, 5, 10, 100) - took FOREVER to run, and didn't improve the model at all. SVM is a bust for analyzing this dataset.
 
 ```{r}
 dbDisconnect(con)

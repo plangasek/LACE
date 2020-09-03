@@ -88,9 +88,6 @@ and comorbidity can be argued either way, as either numeric or factor. Let's tre
 # Data Wrangling
 
 ```{r}
-set.seed(111)
-
-# LACE_pt <- readRDS("data/LACE.RDS") moved up into the EDA portion
 
 # Retype the factors
 
@@ -114,6 +111,8 @@ Setting type for each of the clearly factor variables ensure they're not treated
 TECHNICALLY, we should also have a validation set, but in the interest of time and ease of explanation, will go with suggestions from assignment instructions of splitting into 2 partitions: training and testing.
 
 ```{r}
+set.seed(111)
+
 #grab indices of the dataset that represent 80% of the data
 trainingIndices <- createDataPartition(y = LACE_pt$readmit30, p=.80,
                                        list=FALSE)
@@ -190,13 +189,6 @@ ggplot(trainData, aes(y = readmit30, x = ED_visits_score, color = coPts)) +
   geom_point()
 ```
 
-```{r}
-LACEModelSimple <- glm(readmit30 ~ Length_of_stay + Admission_acuity, data = trainData, family = "binomial")
-
-summary(LACEModelSimple)
-
-tidy(LACEModelSimple)
-```
 
 
 
@@ -218,15 +210,6 @@ testData <- data.frame(testData, predProb=modelPredictedProbabilities)
 testData %>% ggplot(aes(x=LACE, y=predProb, color=Admission_acuity)) + geom_point()
 ```
 
-```{r}
-simplemodelPredictedProbabilities <- predict(LACEModelSimple, newdata=testData, type = "response")
-
-testData <- data.frame(testData, predProbSimple=simplemodelPredictedProbabilities)
-
-testData %>%
-  ggplot(aes(x = LACE, y = predProbSimple, color = Admission_acuity)) +
-  geom_point()
-```
 
 
 ```{r}
@@ -240,16 +223,6 @@ testDataPred <- data.frame(testData, predLogit = modelPredictedLogOddsRatio)
 testDataPred %>% ggplot(aes(x=LACE, y=predLogit, color=Admission_acuity)) + geom_point()
 ```
 
-```{r}
-#predict the SIMPLE logit instead for our testData
-simplemodelPredictedLogOddsRatio <- predict(LACEModelSimple,newdata = testData)
-
-#add as another column in our table
-testDataPredsimple <- data.frame(testData, predLogit = simplemodelPredictedLogOddsRatio)
-
-#plot the age versus logit (coloring by gender)
-testDataPredsimple %>% ggplot(aes(x=LACE, y=predLogit, color=Admission_acuity)) + geom_point()
-```
 
 ```{r}
 #transform the logit to the predictedOdds ratio
@@ -278,12 +251,6 @@ truthPredict <- table(testData$readmit30, modelPredictions)
 truthPredict
 ```
 
-```{r}
-simplemodelPredictions <- ifelse(simplemodelPredictedProbabilities < 0.13, "no", "yes")
-
-simpletruthPredict <- table(testData$readmit30, simplemodelPredictions)
-simpletruthPredict
-```
 
 
 ```{r}
@@ -298,7 +265,7 @@ accuracy
 caret::confusionMatrix(testData$readmit30, factor(modelPredictions), positive = "yes")
 ```
 ```{r}
-truth <- factor(testData$readmit30, levels=c("Y","N"))
+truth <- factor(testData$readmit30, levels=c("yes","no"))
 #seq() function allows us to make a sequence of cutoffs
 cutoffs <- seq(from=0.01,to=1, by = 0.01)
 cutoffs
@@ -309,12 +276,12 @@ cutoffs
 # for a particular cutoff
 run_cutoff <- function(cutoff){
   #Do thresholding with cutoff       
-  predictions <- ifelse(modelPredictedProbabilities < cutoff, "N", "Y")
+  predictions <- ifelse(modelPredictedProbabilities < cutoff, "no", "yes")
   #run confusion matrix on predictions
   caret::confusionMatrix(
-          factor(predictions, levels=c("Y", "N")), 
+          factor(predictions, levels=c("yes", "no")), 
                   truth, 
-                  positive="Y")
+                  positive="yes")
   }
 ```
 
@@ -338,7 +305,51 @@ cutoff_frame <- data.frame(cutoff=cutoffs, sensitivity =sensitivities, specifici
 cutoff_frame
 ```
 
-50% accuracy with a simple linear model is .. not great. Adjusting the components didn't help at all.
+50% accuracy with a simple linear model is .. not great. Adjusting the components didn't help at all. Cutoff needs to be 0.15 to have at least a random chance at specificity, and keep sensitivity above random chance; 0.11 has best sensitivity, but very poor specificity.
+
+Simplifying the linear model to use only a couple of variables (the most significant found above):
+
+```{r}
+LACEModelSimple <- glm(readmit30 ~ Length_of_stay + Admission_acuity, data = trainData, family = "binomial")
+
+summary(LACEModelSimple)
+
+tidy(LACEModelSimple)
+```
+
+```{r}
+#predict the SIMPLE logit instead for our testData
+simplemodelPredictedLogOddsRatio <- predict(LACEModelSimple,newdata = testData)
+
+#add as another column in our table
+testDataPredsimple <- data.frame(testData, predLogit = simplemodelPredictedLogOddsRatio)
+
+#plot the age versus logit (coloring by gender)
+testDataPredsimple %>% ggplot(aes(x=LACE, y=predLogit, color=Admission_acuity)) + geom_point()
+```
+
+```{r}
+simplemodelPredictedProbabilities <- predict(LACEModelSimple, newdata=testData, type = "response")
+
+testData <- data.frame(testData, predProbSimple=simplemodelPredictedProbabilities)
+
+testData %>%
+  ggplot(aes(x = LACE, y = predProbSimple, color = Admission_acuity)) +
+  geom_point()
+```
+
+```{r}
+simplemodelPredictions <- ifelse(simplemodelPredictedProbabilities < 0.13, "no", "yes")
+
+simpletruthPredict <- table(testData$readmit30, simplemodelPredictions)
+simpletruthPredict
+
+caret::confusionMatrix(testData$readmit30, factor(simplemodelPredictions), positive = "yes")
+```
+
+
+Simplified performs no better.
+
 
 # Random Forest
 
@@ -383,7 +394,7 @@ rf.accuracy
 
 
 ```{r}
-rf.conf <- confusionMatrix(workingtestData$readmit30, rf.predictLACE, positive = 'yes')
+rf.conf <- confusionMatrix(workingtestData$readmit30, workingtestData$rf.predictLACE, positive = 'yes')
 
 rf.conf
 ```
@@ -451,6 +462,10 @@ svm.conf
 ```
 
 SVM will not identify any positive classes. Adjusted C parameter in range (0.01, .1, 1, 5, 10, 100) - took FOREVER to run, and didn't improve the model at all. SVM is a bust for analyzing this dataset.
+
+# Neural Network
+
+Barrett ran a Neural Network with similar results to the SVM; it is not identifying positive readmit cases.
 
 ```{r}
 dbDisconnect(con)

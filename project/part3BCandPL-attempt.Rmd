@@ -31,6 +31,7 @@ library(ROCR)
 library(skimr)
 library(randomForest)
 library(e1071)
+library(GGally)
 ```
 
 ```{r}
@@ -102,7 +103,36 @@ LACE_pt$comorbidity <- factor(LACE_pt$comorbidity)
 summary(LACE_pt)
 skim(LACE_pt)
 
+# Look at every pairing
+
+no.PtID <- LACE_pt[2:8]
+ggpairs(no.PtID)
+
 ```
+
+At a glance, nothing in the ggpairs indicates that any one variable is specifically predictive of readmission, or even that there's high correlation between independent variables (L, coPts, and Admission_acuity). The full LACE score also doesn't indicate it will be terribly predictive on its own, suggesting that we might be missing something huge here.
+
+```{r}
+qplot(x = LACE_pt$patientID, y = LACE_pt$LACE, col=LACE_pt$readmit30, shape = LACE_pt$Admission_acuity)
+
+qplot(x = LACE_pt$patientID, y = LACE_pt$Length_of_stay, col = LACE_pt$readmit30)
+
+qplot(x = LACE_pt$patientID, y = LACE_pt$Admission_acuity, col = LACE_pt$readmit30)
+
+qplot(x = LACE_pt$patientID, y = LACE_pt$coPts, col = LACE_pt$readmit30)
+
+qplot(x = LACE_pt$patientID, y = LACE_pt$ED_visits_score, col = LACE_pt$readmit30)
+```
+
+
+I wanna test things after scaling the Length_of_stay because there is an outlier that looks like it could be pulling the data.
+
+
+```{r}
+LACE_pt.scaled <- LACE_pt %>%
+  mutate(Length_of_stay = scale(Length_of_stay, center = TRUE))
+```
+
 
 # Create Training and Testing Datasets
 
@@ -133,6 +163,19 @@ testData <- LACE_pt[-trainingIndices,]
 #confirm the number of rows 
 nrow(testData)
 ```
+
+Secondary set of training/testing data - specifically for scaled.
+
+```{r}
+trainData.scaled <- LACE_pt.scaled[trainingIndices,]
+
+testData.scaled <- LACE_pt.scaled[-trainingIndices,]
+
+nrow(testData.scaled)
+nrow(trainData.scaled)
+```
+
+Confirm partitioned data are as expected.
 
 ```{r}
 # Expected rows:
@@ -171,9 +214,18 @@ colnames(trainData)
 #run a simple logistic regression model just using age and gender
 #we can cast gender as categorical data using factor()
 
-LACEModel <- glm(readmit30 ~ Length_of_stay + Admission_acuity + coPts + ED_visits_score, data= trainData, family="binomial")
+LACEModel <- glm(readmit30 ~ Length_of_stay + Admission_acuity + coPts + ED_visits_score, data= trainData, family=binomial(link = 'logit'))
 summary(LACEModel)
 ```
+
+
+And the scaled version.
+```{r}
+LACEModel.scaled <- glm(readmit30 ~ Length_of_stay + Admission_acuity + coPts + ED_visits_score, data = trainData.scaled, family = binomial(link = 'logit'))
+
+summary(LACEModel.scaled)
+```
+
 
 ```{r}
 ggplot(trainData, aes(y = readmit30, x = Length_of_stay, color = Admission_acuity)) + 
@@ -185,8 +237,8 @@ ggplot(trainData, aes(y = readmit30, x = Length_of_stay, color = coPts)) +
 ggplot(trainData, aes(y = readmit30, x = Length_of_stay, color = ED_visits_score)) + 
   geom_boxplot()
 
-ggplot(trainData, aes(y = readmit30, x = ED_visits_score, color = coPts)) + 
-  geom_point()
+ggplot(trainData, aes(y = readmit30, x = coPts, color = ED_visits_score)) + 
+  geom_count()
 ```
 
 
@@ -196,6 +248,11 @@ ggplot(trainData, aes(y = readmit30, x = ED_visits_score, color = coPts)) +
 #Summarize the model
 tidy(LACEModel)
 ```
+```{r}
+tidy(LACEModel.scaled)
+```
+
+
 ```{r}
 #grab coefficients themselves
 coef(LACEModel)
@@ -207,9 +264,18 @@ modelPredictedProbabilities <- predict(LACEModel, newdata=testData, type = "resp
 testData <- data.frame(testData, predProb=modelPredictedProbabilities)
 #testDataAugment <- augment(ageGenderModel)
 
-testData %>% ggplot(aes(x=LACE, y=predProb, color=Admission_acuity)) + geom_point()
+testData %>% ggplot(aes(x=LACE, y=predProb, color=readmit30)) + geom_point()
 ```
 
+```{r}
+modelPredictedProbabilities.scaled <- predict(LACEModel.scaled, newdata=testData.scaled, type = "response")
+
+##add the modelPredictedProbabilities as a column in testData
+testData.scaled <- data.frame(testData.scaled, predProb=modelPredictedProbabilities.scaled)
+#testDataAugment <- augment(ageGenderModel)
+
+testData.scaled %>% ggplot(aes(x=LACE, y=predProb, color=readmit30)) + geom_point()
+```
 
 
 ```{r}
@@ -220,8 +286,20 @@ modelPredictedLogOddsRatio <- predict(LACEModel,newdata = testData)
 testDataPred <- data.frame(testData, predLogit = modelPredictedLogOddsRatio)
 
 #plot the age versus logit (coloring by gender)
-testDataPred %>% ggplot(aes(x=LACE, y=predLogit, color=Admission_acuity)) + geom_point()
+testDataPred %>% ggplot(aes(x=LACE, y=predLogit, color=readmit30)) + geom_point()
 ```
+
+```{r}
+#predict the logit instead for our testData
+modelPredictedLogOddsRatio.scaled <- predict(LACEModel.scaled,newdata = testData.scaled)
+
+#add as another column in our table
+testDataPred.scaled <- data.frame(testData.scaled, predLogit = modelPredictedLogOddsRatio.scaled)
+
+#plot the age versus logit (coloring by gender)
+testDataPred.scaled %>% ggplot(aes(x=LACE, y=predLogit, color=readmit30)) + geom_point()
+```
+
 
 
 ```{r}
@@ -233,8 +311,9 @@ modelPredictedOddsRatio[1:10]
 testDataPred <- data.frame(testDataPred, predOR = modelPredictedOddsRatio)
 
 #plot Odds ratio versus age
-testDataPred %>% ggplot(aes(x=LACE, y=predOR, col=Admission_acuity)) + geom_point() + xlim(0,25) + ylim(0,0.5)
+testDataPred %>% ggplot(aes(x=LACE, y=predOR, col=readmit30)) + geom_point() + xlim(0,25) + ylim(0,0.5)
 ```
+
 ```{r}
 exp(coef(LACEModel))
 ```
@@ -242,10 +321,18 @@ exp(coef(LACEModel))
 ```{r}
 modelPredictedProbabilities %>% data.frame() %>% ggplot(aes(x=modelPredictedProbabilities)) + geom_histogram()
 ```
+
 ```{r}
 modelPredictions <- ifelse(modelPredictedProbabilities < 0.13, "no", "yes")
 modelPredictions[1:10]
 ```
+
+```{r}
+modelPredictions.scaled <- ifelse(modelPredictedProbabilities.scaled < 0.13, "no", "yes")
+modelPredictions.scaled[1:10]
+```
+
+
 ```{r}
 truthPredict <- table(testData$readmit30, modelPredictions)
 truthPredict
@@ -260,10 +347,19 @@ misclassified
 accuracy <- (totalCases - misclassified) / totalCases
 accuracy
 ```
+
+
 ```{r}
 
 caret::confusionMatrix(testData$readmit30, factor(modelPredictions), positive = "yes")
+
+confusionMatrix(testData.scaled$readmit30, factor(modelPredictions.scaled), positive = "yes")
+
 ```
+
+
+The scaled model does not appear to perform better than the non-scaled model.
+
 ```{r}
 truth <- factor(testData$readmit30, levels=c("yes","no"))
 #seq() function allows us to make a sequence of cutoffs
@@ -325,7 +421,7 @@ simplemodelPredictedLogOddsRatio <- predict(LACEModelSimple,newdata = testData)
 testDataPredsimple <- data.frame(testData, predLogit = simplemodelPredictedLogOddsRatio)
 
 #plot the age versus logit (coloring by gender)
-testDataPredsimple %>% ggplot(aes(x=LACE, y=predLogit, color=Admission_acuity)) + geom_point()
+testDataPredsimple %>% ggplot(aes(x=LACE, y=predLogit, color=readmit30)) + geom_point()
 ```
 
 ```{r}
@@ -334,7 +430,7 @@ simplemodelPredictedProbabilities <- predict(LACEModelSimple, newdata=testData, 
 testData <- data.frame(testData, predProbSimple=simplemodelPredictedProbabilities)
 
 testData %>%
-  ggplot(aes(x = LACE, y = predProbSimple, color = Admission_acuity)) +
+  ggplot(aes(x = LACE, y = predProbSimple, color = readmit30)) +
   geom_point()
 ```
 
@@ -353,13 +449,13 @@ Simplified performs no better.
 
 # Random Forest
 
-I want a dataset that only has the data we're going to use for the models in it.
+I want a dataset that only has the data we're going to use for the models in it. 
 
 ```{r}
-workingtrainData <- trainData %>%
+workingtrainData <- LACE_pt[trainingIndices,] %>%
   select(2, 3, 5, 6, 8)
 
-workingtestData <- testData %>%
+workingtestData <- LACE_pt[-trainingIndices,] %>%
   select(2, 3, 5, 6, 8)
 ```
 
@@ -367,7 +463,7 @@ workingtestData <- testData %>%
 ```{r}
 set.seed(1701)
 
-rf.LACE <- randomForest(readmit30 ~ ., data = workingtrainData, mtry = 4, importance = TRUE)
+rf.LACE <- randomForest(readmit30 ~ ., data = workingtrainData, mtry = 4, importance = TRUE, ntree = 10)
 
 rf.LACE
 
@@ -400,7 +496,7 @@ rf.conf
 ```
 
 
-Ok, sensitivity is still pretty ... awful. Maybe we should try allowing the forest to use less than all of the LACE components?
+Ok, sensitivity is still pretty ... awful. Maybe we should try allowing the forest to use less than all of the LACE components? Tested using 500 trees (forest), 50 trees (grove), and 10 trees (yard). Highest sensitivity gained was 0.46 with 0.85 for specificity.
 
 ```{r}
 workingtestData2 <- workingtestData[1:5]
@@ -409,7 +505,7 @@ workingtestData2 <- workingtestData[1:5]
 ```{r}
 set.seed(1702)
 
-rfsmall.LACE <- randomForest(readmit30 ~ ., data = workingtrainData, mtry = 2, importance = TRUE)
+rfsmall.LACE <- randomForest(readmit30 ~ ., data = workingtrainData, mtry = 2, importance = TRUE, ntree = 10)
 
 ```
 

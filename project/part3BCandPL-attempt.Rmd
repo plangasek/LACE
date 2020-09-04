@@ -20,19 +20,28 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r}
 #load the RSQLite library
 library(RSQLite)
+# general data manipulation, error calculation, and visualization
 library(here)
 library(dplyr)
 library(tidyverse)
+library(GGally)
+library(skimr)
 library(broom)
 library(caret)
 library(ggplot2)
 library(plotly)
 library(ROCR)
-library(skimr)
+# Random Forest
 library(randomForest)
+# SVM
 library(e1071)
-library(GGally)
+# Neural Networks
+library(keras)
+library(tensorflow)
+library(reticulate)
 ```
+
+# Load Data
 
 ```{r}
 
@@ -61,12 +70,14 @@ queryResult
 tableResult <-collect(queryResult)
 
 saveRDS(tableResult, file='data/LACE.RDS')
+
+LACE_pt <- readRDS("data/LACE.RDS") # Full data file
+
 ```
 
 # EDA
 
 ```{r}
-LACE_pt <- readRDS("data/LACE.RDS")
 
 ggplot(gather(LACE_pt), aes(x = value)) +
   geom_histogram() + 
@@ -123,6 +134,8 @@ qplot(x = LACE_pt$patientID, y = LACE_pt$coPts, col = LACE_pt$readmit30)
 
 qplot(x = LACE_pt$patientID, y = LACE_pt$ED_visits_score, col = LACE_pt$readmit30)
 ```
+
+There doesn't appear to be a nice separation of classes in any particular variable according to LACE score or any of the individual components.
 
 
 I wanna test things after scaling the Length_of_stay because there is an outlier that looks like it could be pulling the data.
@@ -211,8 +224,7 @@ The distributions of the different elements generally look similar in the data p
 #show variable names in analytic data.frame
 colnames(trainData)
 
-#run a simple logistic regression model just using age and gender
-#we can cast gender as categorical data using factor()
+#run a logistic regression model using our LACE components
 
 LACEModel <- glm(readmit30 ~ Length_of_stay + Admission_acuity + coPts + ED_visits_score, data= trainData, family=binomial(link = 'logit'))
 summary(LACEModel)
@@ -226,6 +238,7 @@ LACEModel.scaled <- glm(readmit30 ~ Length_of_stay + Admission_acuity + coPts + 
 summary(LACEModel.scaled)
 ```
 
+Model results don't appear that much different between "raw" version and scaled version.
 
 ```{r}
 ggplot(trainData, aes(y = readmit30, x = Length_of_stay, color = Admission_acuity)) + 
@@ -241,7 +254,7 @@ ggplot(trainData, aes(y = readmit30, x = coPts, color = ED_visits_score)) +
   geom_count()
 ```
 
-
+There really is poor deliniation between our readmit classes and the 4 variables.
 
 
 ```{r}
@@ -262,17 +275,19 @@ modelPredictedProbabilities <- predict(LACEModel, newdata=testData, type = "resp
 
 ##add the modelPredictedProbabilities as a column in testData
 testData <- data.frame(testData, predProb=modelPredictedProbabilities)
-#testDataAugment <- augment(ageGenderModel)
+
 
 testData %>% ggplot(aes(x=LACE, y=predProb, color=readmit30)) + geom_point()
 ```
+
+Again, no clear class separation.
 
 ```{r}
 modelPredictedProbabilities.scaled <- predict(LACEModel.scaled, newdata=testData.scaled, type = "response")
 
 ##add the modelPredictedProbabilities as a column in testData
 testData.scaled <- data.frame(testData.scaled, predProb=modelPredictedProbabilities.scaled)
-#testDataAugment <- augment(ageGenderModel)
+
 
 testData.scaled %>% ggplot(aes(x=LACE, y=predProb, color=readmit30)) + geom_point()
 ```
@@ -310,7 +325,7 @@ modelPredictedOddsRatio[1:10]
 #add as column in our table
 testDataPred <- data.frame(testDataPred, predOR = modelPredictedOddsRatio)
 
-#plot Odds ratio versus age
+
 testDataPred %>% ggplot(aes(x=LACE, y=predOR, col=readmit30)) + geom_point() + xlim(0,25) + ylim(0,0.5)
 ```
 
@@ -358,7 +373,7 @@ confusionMatrix(testData.scaled$readmit30, factor(modelPredictions.scaled), posi
 ```
 
 
-The scaled model does not appear to perform better than the non-scaled model.
+The scaled model does not appear to perform better than the non-scaled model. Sensitivity is very low, while specificity is through the roof; I suspect this is because of the overrepresentation of negative outcomes and lack of clear class distinction.
 
 ```{r}
 truth <- factor(testData$readmit30, levels=c("yes","no"))
@@ -496,7 +511,7 @@ rf.conf
 ```
 
 
-Ok, sensitivity is still pretty ... awful. Maybe we should try allowing the forest to use less than all of the LACE components? Tested using 500 trees (forest), 50 trees (grove), and 10 trees (yard). Highest sensitivity gained was 0.46 with 0.85 for specificity.
+Ok, sensitivity is still pretty ... awful. Maybe we should try allowing the forest to use less than all of the LACE components? Tested using 500 trees (forest), 50 trees (grove), and 10 trees (yard). Highest sensitivity gained was 0.46 with 0.85 for specificity. Certainly performing better than logistic regression.
 
 ```{r}
 workingtestData2 <- workingtestData[1:5]
@@ -561,7 +576,83 @@ SVM will not identify any positive classes. Adjusted C parameter in range (0.01,
 
 # Neural Network
 
-Barrett ran a Neural Network with similar results to the SVM; it is not identifying positive readmit cases.
+Barrett ran a Neural Network with similar results to the SVM; it also does not perform well in this dataset.
+
+```{r}
+## some Intel CPUs need this option set for Keras to work
+## if in doubt, just leave this command uncommented
+Sys.setenv('KMP_DUPLICATE_LIB_OK'='True')
+
+## first let's remember what our data looks like
+head(trainData)
+
+## normalize data
+scaled_train <- apply(data.matrix(trainData), 2, function(x) (x-min(x))/(max(x) - min(x)))
+scaled_test <- apply(data.matrix(testData), 2, function(x) (x-min(x))/(max(x) - min(x)))
+
+## our dataset still contains all of the same information, but values are now numeric and range from 0 to 1
+head(scaled_train)
+```
+
+```{r}
+## instantiate the model framework and let keras know we'll be building a sequential model
+model <- keras_model_sequential()
+
+## add fully-connected/dense layers to our model with dropout for regularization (i.e. to prevent overfitting)
+## scaled_train[,c(2,6) selects all rows from columns 2 and 6 (age and sbp) of the training data
+model %>%
+	layer_dense(units = 140, activation = 'relu', input_shape = ncol(scaled_test[,c("Length_of_stay","Admission_acuity", "coPts", "ED_visits_score")])) %>%
+	layer_dropout(0.25) %>%
+	layer_dense(units = 140, activation = 'relu') %>%
+	layer_dropout(0.25) %>%
+	layer_dense(units = 1, activation = 'sigmoid')
+
+## compile the model
+## since this is a binary classification problem, we use binary crossentropy as our loss metric
+## we'll use simple stochastic gradient decent as our optimizer
+## and we'll monitor the accuracy of both the train and test sets to let us evaluate model performance
+model %>% compile(loss = "binary_crossentropy", optimizer = optimizer_sgd(lr = 0.1), metrics = c('acc'))
+```
+
+```{r, results='hide'}
+## select our predictor and outcome variables 
+scaled_train_x <- scaled_train[, c('Length_of_stay','Admission_acuity','coPts','ED_visits_score')]
+scaled_train_y <- scaled_train[, 'readmit30']
+
+## train the model
+training <- model %>% fit(x = scaled_train_x, y = scaled_train_y, validation_split = 0.20, batch_size = 100, epochs = 25)
+plot(training)
+```
+
+```{r}
+## as before, we have our model make predictions on the test dataset
+nn_predictions <- model %>% predict_proba(scaled_test[,c("Length_of_stay","Admission_acuity", "coPts", "ED_visits_score")])
+
+## compare those predictions to the true class labels
+nn_pr <- prediction(nn_predictions, scaled_test[,"readmit30"])
+
+## evaluate the performance of the model
+nn_perf <- performance(nn_pr, measure = "tpr", x.measure = "fpr")
+
+## calculate the AUC of the model
+nn_auc <- performance(nn_pr, measure = "auc")
+nn_auc <- nn_auc@y.values[[1]]
+
+## plot the model performance
+plot(nn_perf, main="ROC")
+abline(a=0, b=1, col='red', lty=2)
+text(0.5, 0.15, paste('AUROC: ', round(nn_auc, 3)))
+
+## we can also have the neural network output the predicted class (rather than class probability)
+nn_classes <- model %>% predict_classes(scaled_test[,c("Length_of_stay","Admission_acuity", "coPts", "ED_visits_score")])
+
+## then use that as input to confusionMatrix()
+nn_conf <- confusionMatrix(as.factor(nn_classes), as.factor(scaled_test[,"readmit30"]), positive = '1')
+nn_conf
+```
+
+Sensitivity is still very very low. Again, I suspect it's the low number of readmission cases in our data.
+
 
 ```{r}
 dbDisconnect(con)

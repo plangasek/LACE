@@ -661,35 +661,47 @@ Making an image for each component, and the summed component of the population c
 
 cbPalette <- c("#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7") # Color blind palette
 
-L_graph <- ggplot(LACE_pt, aes(x = Length_of_stay, fill = readmit30)) +
+(L_graph <- ggplot(LACE_pt, aes(x = Length_of_stay, fill = readmit30)) +
   labs(x = "Length of Stay", y = "No. of Patients", title = "Length of Stay (L) Component") +
   geom_bar() + 
-  scale_fill_manual(values=cbPalette)
+  scale_fill_manual(values=cbPalette))
 
-A_graph <- ggplot(LACE_pt, aes(x = Admission_acuity, fill = readmit30)) + 
+ggsave("L_graph.png")
+
+(A_graph <- ggplot(LACE_pt, aes(x = Admission_acuity, fill = readmit30)) + 
   labs(x = "Point of Admission", y = "No. of Patients", title = "Admission Acuity (A) Component") + 
   geom_bar() + 
-  scale_fill_manual(values=cbPalette)
+  scale_fill_manual(values=cbPalette))
 
-C_graph <- ggplot(LACE_pt, aes(x = coPts, fill = readmit30)) + 
+ggsave("A_graph.png")
+
+(C_graph <- ggplot(LACE_pt, aes(x = coPts, fill = readmit30)) + 
   labs(x = "Charelston Comorbidity Score for Patient", y = "No. of Patients", title = "Comorbidity (C) Component") + 
   geom_bar() + 
-  scale_fill_manual(values=cbPalette)
+  scale_fill_manual(values=cbPalette))
+
+ggsave("C_graph.png")
   
-E_graph <- ggplot(LACE_pt, aes(x = ED_visits_score, fill = readmit30)) +
+(E_graph <- ggplot(LACE_pt, aes(x = ED_visits_score, fill = readmit30)) +
   labs(x = "Emergency Department Visits Score", y = "No. of Patients", title = "Emergency Department Visits Score (E) Component") + 
   geom_bar() + 
-  scale_fill_manual(values=cbPalette)
+  scale_fill_manual(values=cbPalette))
 
-LACE_graph <- ggplot(LACE_pt, aes(x = LACE, fill = readmit30)) + 
+ggsave("E_graph.png")
+
+(LACE_graph <- ggplot(LACE_pt, aes(x = LACE, fill = readmit30)) + 
   labs(x = "LACE Score", y = "No. of Patients", title = "Full LACE Score") + 
   geom_bar() + 
-  scale_fill_manual(values=cbPalette)
+  scale_fill_manual(values=cbPalette))
 
-patient <- ggplot(LACE_pt, aes(x = readmit30, fill = readmit30)) + 
+ggsave("LACE_graph.png")
+
+(patient <- ggplot(LACE_pt, aes(x = readmit30, fill = readmit30)) + 
   labs(x = "Readmission in 30 Days", y = "Count", title = "Full Patient Count") + 
   geom_bar() + 
-  scale_fill_manual(values=cbPalette)
+  scale_fill_manual(values=cbPalette))
+
+ggsave("patient_graph.png")
 
 ```
 

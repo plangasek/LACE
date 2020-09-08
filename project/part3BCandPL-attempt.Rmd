@@ -53,7 +53,7 @@ dbListTables(con)
 
 ```{r}
 #Combine points to form LACE score
-sqlStatement <- "SELECT patientid, Length_of_stay, Admission_acuity, ifnull(coPts,0) comorbidity, CASE WHEN ifnull(coPts,0)<3 THEN ifnull(coPts,0) ELSE 5 END coPts, ED_visits_score, (Length_of_stay+Admission_acuity+CASE WHEN ifnull(coPts,0)<3 THEN ifnull(coPts,0) ELSE 5 END+ED_visits_score) LACE, readmit30 FROM (
+sqlStatement <- "SELECT patientid, CASE WHEN Length_of_stay < 5 THEN Length_of_stay WHEN Length_of_stay < 6 THEN 4 WHEN Length_of_stay < 13 THEN 5 ELSE 7 END Length_of_stay, Admission_acuity, ifnull(coPts,0) comorbidity, CASE WHEN ifnull(coPts,0)<3 THEN ifnull(coPts,0) ELSE 5 END coPts, ED_visits_score, (CASE WHEN Length_of_stay < 5 THEN Length_of_stay WHEN Length_of_stay < 6 THEN 4 WHEN Length_of_stay < 13 THEN 5 ELSE 7 END+Admission_acuity+CASE WHEN ifnull(coPts,0)<3 THEN ifnull(coPts,0) ELSE 5 END+ED_visits_score) LACE, readmit30 FROM (
                   (SELECT * 
                   FROM analyticTable 
                   WHERE index_admit=1) LEFT JOIN 
@@ -652,6 +652,39 @@ nn_conf
 ```
 
 Sensitivity is still very very low. Again, I suspect it's the low number of readmission cases in our data.
+
+# Visualizations for Presentation
+
+Making an image for each component, and the summed component of the population colored by readmit outcome.
+
+```{r}
+
+L_graph <- ggplot(LACE_pt, aes(x = Length_of_stay, fill = readmit30)) +
+  labs(x = "Length of Stay", y = "No. of Patients", title = "Length of Stay (L) Component") +
+  geom_bar()
+
+A_graph <- ggplot(LACE_pt, aes(x = Admission_acuity, fill = readmit30)) + 
+  labs(x = "Point of Admission", y = "No. of Patients", title = "Admission Acuity (A) Component") + 
+  geom_bar()
+
+C_graph <- ggplot(LACE_pt, aes(x = coPts, fill = readmit30)) + 
+  labs(x = "Charelston Comorbidity Score for Patient", y = "No. of Patients", title = "Comorbidity (C) Component") + 
+  geom_bar()
+  
+E_graph <- ggplot(LACE_pt, aes(x = ED_visits_score, fill = readmit30)) +
+  labs(x = "Emergency Department Visits Score", y = "No. of Patients", title = "Emergency Department Visits Score (E) Component") + 
+  geom_bar()
+
+LACE_graph <- ggplot(LACE_pt, aes(x = LACE, fill = readmit30)) + 
+  labs(x = "LACE Score", y = "No. of Patients", title = "Full LACE Score") + 
+  geom_bar()
+
+patient <- ggplot(LACE_pt, aes(x = readmit30, fill = readmit30)) + 
+  labs(x = "Readmission in 30 Days", y = "Count", title = "Full Patient Count") + 
+  geom_bar()
+
+```
+
 
 
 ```{r}
